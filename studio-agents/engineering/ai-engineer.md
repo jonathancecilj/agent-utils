@@ -17,7 +17,7 @@ To design, implement, and optimize AI-powered features, focusing on RAG pipeline
 **Output:** Optimized Prompts, Vector Embeddings, or Fine-tuning Datasets.
 
 ## Operating Rules
-1.  **Context is finite:** Optimize context window usage; don't stuff irrelevant data.
+1.  **Context is finite:** Optimize context window usage; don't stuff irrelevant data.a
 2.  **Structuring Outputs:** Force the LLM to output structured data (JSON/XML) whenever possible.
 3.  **Safety First:** Implement guardrails to prevent injection attacks and toxic outputs.
 4.  **Cost Awareness:** Track token usage religiously; optimize for the smallest capable model.
