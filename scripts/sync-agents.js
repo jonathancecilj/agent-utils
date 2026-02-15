@@ -93,49 +93,76 @@ function getValidationStatus() {
         const localFileName = path.basename(localFilePath);
         const relativePath = path.relative(localAgentDir, localFilePath);
 
-        // 1. Check for Exact Name Match in Central
-        let exactMatch = null;
+        // 1. Find all potential candidates with matching filenames
+        let candidates = [];
 
-        // Check Agents
+        // Search Agents
         for (const [key, content] of Object.entries(centralAgents)) {
             if (path.basename(key) === localFileName) {
-                exactMatch = { key, content, type: 'Agent', dir: AGENTS_DIR };
-                break;
+                candidates.push({ key, content, type: 'Agent', dir: AGENTS_DIR });
             }
         }
-        // Check Skills if not found in Agents
-        if (!exactMatch) {
-            for (const [key, content] of Object.entries(centralSkills)) {
-                if (path.basename(key) === localFileName) {
-                    exactMatch = { key, content, type: 'Skill', dir: SKILLS_DIR };
-                    break;
-                }
+        // Search Skills
+        for (const [key, content] of Object.entries(centralSkills)) {
+            if (path.basename(key) === localFileName) {
+                candidates.push({ key, content, type: 'Skill', dir: SKILLS_DIR });
             }
         }
 
-        if (exactMatch) {
-            if (localContent.trim() === exactMatch.content.trim()) {
-                results.push({ status: 'Synced', localPath: localFilePath, ...exactMatch });
+        let bestMatch = null;
+
+        if (candidates.length > 0) {
+            // Strategy to pick the best match from candidates:
+            // 1. Exact Content Match (Highest Priority)
+            // 2. Relative Path Match (Medium Priority)
+            // 3. Shortest Path (Lowest Priority - prefer root)
+
+            // Normalize local relative path for comparison (remove .agent/personas prefix etc)
+            let cleanLocalPath = relativePath.replace(/^(\.agent\/)?(personas|skills)\//, '');
+
+            // Grade matches
+            const scoredCandidates = candidates.map(c => {
+                let score = 0;
+                const isContentExact = localContent.trim() === c.content.trim();
+                if (isContentExact) score += 100;
+
+                // Path match?
+                if (c.key === cleanLocalPath) score += 50;
+
+                // Penalize depth (prefer root files slightly if ambiguous)
+                const depth = c.key.split(path.sep).length;
+                score -= depth;
+
+                return { ...c, score, isContentExact };
+            });
+
+            // Sort by score desvending
+            scoredCandidates.sort((a, b) => b.score - a.score);
+            bestMatch = scoredCandidates[0];
+
+            if (bestMatch.isContentExact) {
+                results.push({ status: 'Synced', localPath: localFilePath, ...bestMatch });
             } else {
-                results.push({ status: 'Modified', localPath: localFilePath, ...exactMatch });
+                results.push({ status: 'Modified', localPath: localFilePath, ...bestMatch });
             }
+
         } else {
-            // 2. Fuzzy Search
-            let bestMatch = { score: 0, key: null, type: null, dir: null };
+            // 2. Fuzzy Search (No filename match found)
+            let fuzzyMatch = { score: 0, key: null, type: null, dir: null };
 
             // Check against Agents
             for (const [key, content] of Object.entries(centralAgents)) {
                 const score = getJaccardSimilarity(localContent, content);
-                if (score > bestMatch.score) bestMatch = { score, key, type: 'Agent', dir: AGENTS_DIR };
+                if (score > fuzzyMatch.score) fuzzyMatch = { score, key, type: 'Agent', dir: AGENTS_DIR };
             }
             // Check against Skills
             for (const [key, content] of Object.entries(centralSkills)) {
                 const score = getJaccardSimilarity(localContent, content);
-                if (score > bestMatch.score) bestMatch = { score, key, type: 'Skill', dir: SKILLS_DIR };
+                if (score > fuzzyMatch.score) fuzzyMatch = { score, key, type: 'Skill', dir: SKILLS_DIR };
             }
 
-            if (bestMatch.score > 0.8) {
-                results.push({ status: 'Duplicate', localPath: localFilePath, ...bestMatch });
+            if (fuzzyMatch.score > 0.8) {
+                results.push({ status: 'Duplicate', localPath: localFilePath, ...fuzzyMatch });
             } else {
                 results.push({ status: 'New', localPath: localFilePath });
             }
