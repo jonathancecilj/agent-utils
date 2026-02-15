@@ -12,7 +12,7 @@ const command = process.argv[2];
 const target = process.argv[3];
 
 if (!command) {
-    console.log("Usage: agent-sync <sync|promote> [file]");
+    console.log("Usage: agent-utils <sync|promote> [file]");
     process.exit(1);
 }
 
@@ -69,7 +69,7 @@ if (command === 'sync') {
 
 } else if (command === 'promote') {
     if (!target) {
-        console.error("Usage: agent-sync promote <path-to-file>");
+        console.error("Usage: agent-utils promote <path-to-file>");
         process.exit(1);
     }
 
