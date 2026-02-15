@@ -6,14 +6,14 @@ This repository serves as the **central source of truth** for all Agent Personas
 
 *   **`agents-studio/`**: Contains core Agent Personas (e.g., `technical-writer.md`, `seo-specialist.md`).
 *   **`skills-studio/`**: Contains reusable Skills (e.g., `web-scraping/SKILL.md`).
-*   **`scripts/`**: Maintenance tools (including the synchronization script).
+*   **`scripts/`**: Maintenance tools (including the synchronization script and `install.sh`).
 
 ## Installation
 
 To use these agents in any project, you need to set up the global `agent-sync` alias. Run this command **once** in your terminal:
 
 ```bash
-source ~/Documents/Development/agent-utils/setup.sh
+source ~/Documents/Development/agent-utils/install.sh
 ```
 
 *(Recommended: Add the output alias command to your `~/.zshrc` or `~/.bashrc` to make it permanent.)*
