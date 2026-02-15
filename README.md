@@ -44,17 +44,36 @@ To use specific agents in a project (e.g., `Medium` or `Portfolio`):
 
     This will copy the requested agents into your project's `.agent/personas/` and `.agent/skills/` directories.
 
-### 2. Promoting New Agents (Upstream)
+### 2. Validating Changes (Pre-Check)
+
+Before promoting, you can check which agents have changed locally compared to the central repository:
+
+```bash
+agent-utils validate
+```
+
+This will scan your `.agent/` directory and report the status of each file:
+- **[Synced]**: File matches the central repo exactly.
+- **[Modified]**: File has local changes.
+- **[New]**: File exists locally but not in the central repo.
+- **[Duplicate]**: File content matches an existing agent, even if named differently (renamed).
+
+### 3. Promoting New Agents (Upstream)
 
 If you create or improve an agent within a project and want to save it back to this central repository:
 
-1.  Draft and test the agent locally in your project (e.g., `.agent/personas/new-agent.md`).
+1.  Draft and test the agent locally in your project (e.g., `.agent/personas/engineering/new-agent.md`).
 2.  Run the promote command:
     ```bash
-    agent-utils promote ./path/to/new-agent.md
+    agent-utils promote
     ```
 
-    This will copy the file back to `agents-studio/` (or `skills-studio/`) in this repository.
+    This command is **interactive** and **smart**:
+    - It runs `validate` first to find all changes.
+    - It prompts you `(y/n)` for each file before promoting.
+    - **Smart Placement**: It automatically mirrors your local folder structure.
+      - Local: `.agent/personas/engineering/new-agent.md`
+      - Central: `agents-studio/engineering/new-agent.md`
 
 ## Contribution Rules
 
