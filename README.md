@@ -24,6 +24,20 @@ source ~/Documents/Development/agent-utils/install.sh
 
 To use specific agents in a project (e.g., `Medium` or `Portfolio`):
 
+### 1. Import Agents (Interactive)
+
+The easiest way to get started is to use the interactive `import` command. This will help you select agents and automatically create your `agent-manifest.json` file.
+
+```bash
+agent-utils import
+```
+
+Follow the prompts to select the agents and skills you want to add to your project.
+
+### 2. Manual Setup (Optional)
+
+If you prefer to configure manually:
+
 1.  Create an `agent-manifest.json` file in the root of your project:
     ```json
     {

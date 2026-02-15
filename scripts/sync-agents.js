@@ -32,7 +32,7 @@ function getFiles(dir) {
         if (conststat && conststat.isDirectory()) {
             results = results.concat(getFiles(filePath));
         } else {
-            if (file.endsWith('.md')) { // Only check markdown files
+            if (file.endsWith('.md') && file.toLowerCase() !== 'readme.md') { // Only check markdown files, excluding README.md
                 results.push(filePath);
             }
         }
@@ -228,6 +228,7 @@ async function run() {
                 const destPath = path.join(localSkillsDir, skillName); // Keep folder name
 
                 if (fs.existsSync(srcPath)) {
+                    ensureDir(path.dirname(destPath)); // Ensure parent dir exists
                     execSync(`rm -rf "${destPath}" && cp -R "${srcPath}" "${destPath}"`);
                     console.log(`Synced Skill: ${skillName}`);
                 } else {
@@ -318,6 +319,111 @@ async function run() {
         }
 
 
+    } else if (command === 'import') {
+        console.log("Fetching available agents and skills...");
+
+        const centralAgents = loadCentralFiles(AGENTS_DIR);
+        const centralSkills = loadCentralFiles(SKILLS_DIR);
+
+        const availableAgents = Object.keys(centralAgents).sort();
+        const availableSkills = Object.keys(centralSkills).sort();
+
+        // Load existing manifest
+        const manifestPath = path.resolve(process.cwd(), 'agent-manifest.json');
+        let manifest = { agents: [], skills: [] };
+        if (fs.existsSync(manifestPath)) {
+            try {
+                manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
+                manifest.agents = manifest.agents || [];
+                manifest.skills = manifest.skills || [];
+            } catch (e) {
+                console.warn("Could not parse existing agent-manifest.json, starting fresh.");
+            }
+        }
+
+        // Helper to display list and toggle selections
+        function printSelection(title, items, selected) {
+            console.log(`\n--- ${title} ---`);
+            items.forEach((item, index) => {
+                const isSelected = selected.includes(item);
+                const mark = isSelected ? '[x]' : '[ ]';
+                console.log(`${index + 1}. ${mark} ${item}`);
+            });
+        }
+
+        // Interact with User
+        // Agents
+        let doneAgents = false;
+        while (!doneAgents) {
+            printSelection("Available Agents", availableAgents, manifest.agents);
+            console.log("\nEnter numbers to toggle selection (space separated), 'a' for all, 'n' for none, or 'd' when done.");
+            const ans = await askQuestion("Select Agents > ");
+
+            if (ans.toLowerCase() === 'd') {
+                doneAgents = true;
+            } else if (ans.toLowerCase() === 'a') {
+                manifest.agents = [...availableAgents];
+            } else if (ans.toLowerCase() === 'n') {
+                manifest.agents = [];
+            } else {
+                const indices = ans.split(/\s+/).map(s => parseInt(s, 10)).filter(n => !isNaN(n));
+                indices.forEach(i => {
+                    if (i > 0 && i <= availableAgents.length) {
+                        const item = availableAgents[i - 1];
+                        if (manifest.agents.includes(item)) {
+                            manifest.agents = manifest.agents.filter(x => x !== item);
+                        } else {
+                            manifest.agents.push(item);
+                        }
+                    }
+                });
+            }
+        }
+
+        // Skills
+        let doneSkills = false;
+        while (!doneSkills) {
+            printSelection("Available Skills", availableSkills, manifest.skills);
+            console.log("\nEnter numbers to toggle selection (space separated), 'a' for all, 'n' for none, or 'd' when done.");
+            const ans = await askQuestion("Select Skills > ");
+
+            if (ans.toLowerCase() === 'd') {
+                doneSkills = true;
+            } else if (ans.toLowerCase() === 'a') {
+                manifest.skills = [...availableSkills];
+            } else if (ans.toLowerCase() === 'n') {
+                manifest.skills = [];
+            } else {
+                const indices = ans.split(/\s+/).map(s => parseInt(s, 10)).filter(n => !isNaN(n));
+                indices.forEach(i => {
+                    if (i > 0 && i <= availableSkills.length) {
+                        const item = availableSkills[i - 1];
+                        if (manifest.skills.includes(item)) {
+                            manifest.skills = manifest.skills.filter(x => x !== item);
+                        } else {
+                            manifest.skills.push(item);
+                        }
+                    }
+                });
+            }
+        }
+
+        // Save Manifest
+        fs.writeFileSync(manifestPath, JSON.stringify(manifest, null, 2));
+        console.log(`\nUpdated ${manifestPath}`);
+
+        // Run Sync
+        console.log("Running sync...");
+        // Re-run the script with 'sync' command
+        // We can't easily recurse run() cleanly because of how it's structured, 
+        // but we can spawn a child process or just copy the sync logic. 
+        // For simplicity and to avoid code duplication, I'll execute the script itself.
+        try {
+            execSync(`node "${__filename}" sync`, { stdio: 'inherit' });
+        } catch (e) {
+            console.error("Sync failed.");
+        }
+
     } else if (command === 'validate') {
         const results = getValidationStatus();
         if (results.length === 0) {
@@ -338,7 +444,7 @@ async function run() {
             }
         });
     } else {
-        console.error("Unknown command. Use 'sync', 'promote', or 'validate'.");
+        console.error("Unknown command. Use 'import', 'sync', 'promote', or 'validate'.");
     }
 }
 
