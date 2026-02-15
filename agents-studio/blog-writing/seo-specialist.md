@@ -29,3 +29,24 @@ You must append an **SEO Metadata** section to the frontmatter or end of the doc
 
 ### Instruction for Agent
 When acting as this persona, review the draft and provide a structured "SEO Audit" report with specific actionable changes. **Do not rewrite the whole article unless asked.** Just provide the optimized metadata and specific paragraph tweaks.
+
+## Standard Operating Procedure
+
+1. Ask the User for the **Category** and **Slug** of the draft to review.
+   - Example: `finance` / `yen-carry-trade`
+
+2. Read the draft content: `{{Category}}/{{Slug}}/{{Slug}}.md`.
+
+3. **Analyze Content:**
+   - Invoke the **SEO Specialist Persona**.
+   - Analyze Title, Headings, Keyword Density, and Structure.
+   - Generate specific `seo_title`, `seo_description`, and `keywords`.
+
+4. **Apply Optimizations:**
+   - Update the Frontmatter of `{{Category}}/{{Slug}}/{{Slug}}.md` with the new SEO fields.
+   - If the Headline needs improvement, propose 3 alternatives to the User.
+   - If the Content structure needs fixing (e.g., long paragraphs), list the specific sections to edit.
+
+5. **Final Review:**
+   - Present the changes to the user for approval.
+   - Once approved, save the file.

@@ -3,6 +3,7 @@
 const fs = require('fs');
 const path = require('path');
 const { execSync } = require('child_process');
+const readline = require('readline');
 
 const AGENT_UTILS_ROOT = path.resolve(__dirname, '..');
 const AGENTS_DIR = path.join(AGENT_UTILS_ROOT, 'agents-studio');
@@ -20,134 +21,72 @@ function ensureDir(dir) {
     if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
 }
 
-if (command === 'sync') {
-    const manifestPath = path.resolve(process.cwd(), 'agent-manifest.json');
-    if (!fs.existsSync(manifestPath)) {
-        console.error("Error: agent-manifest.json not found in current directory.");
-        process.exit(1);
-    }
-
-    const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
-
-    // Sync Agents
-    if (manifest.agents) {
-        const localAgentsDir = path.resolve(process.cwd(), '.agent/personas');
-        ensureDir(localAgentsDir);
-        manifest.agents.forEach(agentName => {
-            const fileName = agentName.endsWith('.md') ? agentName : `${agentName}.md`;
-            const src = path.join(AGENTS_DIR, fileName);
-            const dest = path.join(localAgentsDir, fileName);
-            if (fs.existsSync(src)) {
-                ensureDir(path.dirname(dest));
-                fs.copyFileSync(src, dest);
-                console.log(`Synced Agent: ${fileName}`);
-            } else {
-                console.warn(`Warning: Agent '${fileName}' not found in agent-utils.`);
+// Helper: Recursively get all files
+function getFiles(dir) {
+    let results = [];
+    if (!fs.existsSync(dir)) return results;
+    const list = fs.readdirSync(dir);
+    list.forEach(file => {
+        const filePath = path.join(dir, file);
+        conststat = fs.statSync(filePath);
+        if (conststat && conststat.isDirectory()) {
+            results = results.concat(getFiles(filePath));
+        } else {
+            if (file.endsWith('.md')) { // Only check markdown files
+                results.push(filePath);
             }
+        }
+    });
+    return results;
+}
+
+// Helper: Jaccard Similarity
+function getJaccardSimilarity(str1, str2) {
+    const set1 = new Set(str1.toLowerCase().split(/\s+/));
+    const set2 = new Set(str2.toLowerCase().split(/\s+/));
+    const intersection = new Set([...set1].filter(x => set2.has(x)));
+    const union = new Set([...set1, ...set2]);
+    return intersection.size / union.size;
+}
+
+// Helper: Load Central Repo Files
+function loadCentralFiles(dir) {
+    const files = {};
+    if (fs.existsSync(dir)) {
+        const allFiles = getFiles(dir);
+        allFiles.forEach(f => {
+            const content = fs.readFileSync(f, 'utf8');
+            files[path.relative(dir, f)] = content;
         });
     }
+    return files;
+}
 
-    // Sync Skills
-    if (manifest.skills) {
-        const localSkillsDir = path.resolve(process.cwd(), '.agent/skills');
-        ensureDir(localSkillsDir);
-        manifest.skills.forEach(skillName => {
-            // Skill can be a file or a folder
-            const srcPath = path.join(SKILLS_DIR, skillName);
-            const destPath = path.join(localSkillsDir, skillName);
+async function askQuestion(query) {
+    const rl = readline.createInterface({
+        input: process.stdin,
+        output: process.stdout,
+    });
+    return new Promise(resolve => rl.question(query, ans => {
+        rl.close();
+        resolve(ans);
+    }));
+}
 
-            if (fs.existsSync(srcPath)) {
-                // Simple copy for now (using cp -r via exec for recursive folder support if needed, or fs.cpSync in newer node)
-                // Using execSync for broad compatibility
-                execSync(`rm -rf "${destPath}" && cp -R "${srcPath}" "${destPath}"`);
-                console.log(`Synced Skill: ${skillName}`);
-            } else {
-                console.warn(`Warning: Skill '${skillName}' not found in agent-utils.`);
-            }
-        });
-    }
-
-} else if (command === 'promote') {
-    if (!target) {
-        console.error("Usage: agent-utils promote <path-to-file>");
-        process.exit(1);
-    }
-
-    const srcPath = path.resolve(target);
-    if (!fs.existsSync(srcPath)) {
-        console.error(`Error: File '${srcPath}' not found.`);
-        process.exit(1);
-    }
-
-    const fileName = path.basename(srcPath);
-
-    // Determine if it's an Agent or Skill based on where it is? 
-    // Or just default to Agent unless specified?
-    // Let's assume .md in .agent/personas is a Persona.
-
-    let destDir = AGENTS_DIR;
-    // Simple heuristic: if path contains "skills", go to skills-studio
-    if (srcPath.includes('/skills/') || srcPath.includes('SKILL.md')) {
-        destDir = SKILLS_DIR;
-    }
-
-    const destPath = path.join(destDir, fileName);
-    fs.copyFileSync(srcPath, destPath);
-    console.log(`Promoted '${fileName}' to ${destDir}`);
-
-} else if (command === 'validate') {
+function getValidationStatus() {
     const localAgentDir = path.resolve(process.cwd(), '.agent');
 
     if (!fs.existsSync(localAgentDir)) {
-        console.warn("No .agent directory found in current project to validate.");
-        process.exit(0);
+        return [];
+        // console.warn("No .agent directory found in current project to validate.");
+        // process.exit(0);
     }
-
-    // Helper: Recursively get all files
-    function getFiles(dir) {
-        let results = [];
-        const list = fs.readdirSync(dir);
-        list.forEach(file => {
-            const filePath = path.join(dir, file);
-            conststat = fs.statSync(filePath);
-            if (conststat && conststat.isDirectory()) {
-                results = results.concat(getFiles(filePath));
-            } else {
-                if (file.endsWith('.md')) { // Only check markdown files
-                    results.push(filePath);
-                }
-            }
-        });
-        return results;
-    }
-
-    // Helper: Jaccard Similarity
-    function getJaccardSimilarity(str1, str2) {
-        const set1 = new Set(str1.toLowerCase().split(/\s+/));
-        const set2 = new Set(str2.toLowerCase().split(/\s+/));
-        const intersection = new Set([...set1].filter(x => set2.has(x)));
-        const union = new Set([...set1, ...set2]);
-        return intersection.size / union.size;
-    }
-
-    // Helper: Load Central Repo Files
-    function loadCentralFiles(dir) {
-        const files = {};
-        if (fs.existsSync(dir)) {
-            const allFiles = getFiles(dir);
-            allFiles.forEach(f => {
-                const content = fs.readFileSync(f, 'utf8');
-                files[path.relative(dir, f)] = content;
-            });
-        }
-        return files;
-    }
-
-    console.log("Validating agents and skills...");
 
     const centralAgents = loadCentralFiles(AGENTS_DIR);
     const centralSkills = loadCentralFiles(SKILLS_DIR);
     const localFiles = getFiles(localAgentDir);
+
+    const results = [];
 
     localFiles.forEach(localFilePath => {
         const localContent = fs.readFileSync(localFilePath, 'utf8');
@@ -156,12 +95,11 @@ if (command === 'sync') {
 
         // 1. Check for Exact Name Match in Central
         let exactMatch = null;
-        let matchType = null; // 'Agent' or 'Skill'
 
         // Check Agents
         for (const [key, content] of Object.entries(centralAgents)) {
             if (path.basename(key) === localFileName) {
-                exactMatch = { key, content, type: 'Agent' };
+                exactMatch = { key, content, type: 'Agent', dir: AGENTS_DIR };
                 break;
             }
         }
@@ -169,7 +107,7 @@ if (command === 'sync') {
         if (!exactMatch) {
             for (const [key, content] of Object.entries(centralSkills)) {
                 if (path.basename(key) === localFileName) {
-                    exactMatch = { key, content, type: 'Skill' };
+                    exactMatch = { key, content, type: 'Skill', dir: SKILLS_DIR };
                     break;
                 }
             }
@@ -177,33 +115,204 @@ if (command === 'sync') {
 
         if (exactMatch) {
             if (localContent.trim() === exactMatch.content.trim()) {
-                console.log(`✅ [${exactMatch.type}] ${localFileName}: Exact match (Synced)`);
+                results.push({ status: 'Synced', localPath: localFilePath, ...exactMatch });
             } else {
-                console.log(`⚠️  [${exactMatch.type}] ${localFileName}: Content differs from central repo (Modified locally)`);
+                results.push({ status: 'Modified', localPath: localFilePath, ...exactMatch });
             }
         } else {
             // 2. Fuzzy Search
-            let bestMatch = { score: 0, key: null, type: null };
+            let bestMatch = { score: 0, key: null, type: null, dir: null };
 
             // Check against Agents
             for (const [key, content] of Object.entries(centralAgents)) {
                 const score = getJaccardSimilarity(localContent, content);
-                if (score > bestMatch.score) bestMatch = { score, key, type: 'Agent' };
+                if (score > bestMatch.score) bestMatch = { score, key, type: 'Agent', dir: AGENTS_DIR };
             }
             // Check against Skills
             for (const [key, content] of Object.entries(centralSkills)) {
                 const score = getJaccardSimilarity(localContent, content);
-                if (score > bestMatch.score) bestMatch = { score, key, type: 'Skill' };
+                if (score > bestMatch.score) bestMatch = { score, key, type: 'Skill', dir: SKILLS_DIR };
             }
 
             if (bestMatch.score > 0.8) {
-                console.log(`🤔 [${bestMatch.type}] ${localFileName}: Potential duplicate of '${bestMatch.key}' (Similarity: ${(bestMatch.score * 100).toFixed(1)}%)`);
+                results.push({ status: 'Duplicate', localPath: localFilePath, ...bestMatch });
             } else {
-                console.log(`❓ [Unknown] ${localFileName}: No match found in central repo (New local file)`);
+                results.push({ status: 'New', localPath: localFilePath });
             }
         }
     });
 
-} else {
-    console.error("Unknown command. Use 'sync', 'promote', or 'validate'.");
+    return results;
 }
+
+
+async function run() {
+
+    if (command === 'sync') {
+        const manifestPath = path.resolve(process.cwd(), 'agent-manifest.json');
+        if (!fs.existsSync(manifestPath)) {
+            console.error("Error: agent-manifest.json not found in current directory.");
+            process.exit(1);
+        }
+
+        const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
+
+        // Sync Agents
+        if (manifest.agents) {
+            const localAgentsDir = path.resolve(process.cwd(), '.agent/personas');
+            ensureDir(localAgentsDir);
+            manifest.agents.forEach(agentName => {
+                const fileName = agentName.endsWith('.md') ? agentName : `${agentName}.md`;
+
+                // Try finding file in agents-studio recursively or structurally
+                // Simple approach: if agentName has slashes, check exact path. 
+                // If not, check if it exists at root, or search for it?
+                // For now, let's assume manifest path matches central repo structure OR is just a filename at root.
+
+                let src = path.join(AGENTS_DIR, fileName);
+                // Check if file exists, if not, maybe it is nested and user only gave name?
+                if (!fs.existsSync(src)) {
+                    // try finding it
+                    const allFiles = loadCentralFiles(AGENTS_DIR);
+                    const match = Object.keys(allFiles).find(k => path.basename(k) === path.basename(fileName));
+                    if (match) src = path.join(AGENTS_DIR, match);
+                }
+
+
+                const dest = path.join(localAgentsDir, path.basename(fileName)); // Flatten to personas dir for local use? Or keep structure?
+                // Flattening is safer for simple consumption unless we want deep structure locally.
+
+                if (fs.existsSync(src)) {
+                    ensureDir(path.dirname(dest));
+                    fs.copyFileSync(src, dest);
+                    console.log(`Synced Agent: ${fileName}`);
+                } else {
+                    console.warn(`Warning: Agent '${fileName}' not found in agent-utils.`);
+                }
+            });
+        }
+
+        // Sync Skills
+        if (manifest.skills) {
+            const localSkillsDir = path.resolve(process.cwd(), '.agent/skills');
+            ensureDir(localSkillsDir);
+            manifest.skills.forEach(skillName => {
+                const srcPath = path.join(SKILLS_DIR, skillName);
+                const destPath = path.join(localSkillsDir, skillName); // Keep folder name
+
+                if (fs.existsSync(srcPath)) {
+                    execSync(`rm -rf "${destPath}" && cp -R "${srcPath}" "${destPath}"`);
+                    console.log(`Synced Skill: ${skillName}`);
+                } else {
+                    console.warn(`Warning: Skill '${skillName}' not found in agent-utils.`);
+                }
+            });
+        }
+
+    } else if (command === 'promote') {
+        // If specific file argument is provided, just promote that one (legacy/specific mode)
+        // OTHERWISE, run smart promote.
+
+        let candidates = [];
+
+        if (target) {
+            // Single file mode - check what it corresponds to
+            const filePath = path.resolve(target);
+            if (!fs.existsSync(filePath)) {
+                console.error(`Error: File '${filePath}' not found.`);
+                process.exit(1);
+            }
+            // Mock a "New" status for this file to trigger placement logic
+            candidates = [{ status: 'New', localPath: filePath }];
+        } else {
+            console.log("Scanning for changes to promote...");
+            const validationResults = getValidationStatus();
+            candidates = validationResults.filter(r => r.status === 'Modified' || r.status === 'New' || r.status === 'Duplicate');
+        }
+
+        if (candidates.length === 0) {
+            console.log("No changes detected to promote.");
+            process.exit(0);
+        }
+
+        console.log(`Found ${candidates.length} candidate(s) for promotion.`);
+
+        for (const item of candidates) {
+            const fileName = path.basename(item.localPath);
+            let destPath = null;
+            let destDir = AGENTS_DIR; // Default
+
+            // Strategic Placement Logic
+            if (item.status === 'Modified') {
+                destPath = path.join(item.dir, item.key);
+                console.log(`\n[Modified] ${fileName} -> ${path.relative(AGENT_UTILS_ROOT, destPath)}`);
+            } else if (item.status === 'Duplicate') {
+                destPath = path.join(item.dir, item.key);
+                console.log(`\n[Duplicate] ${fileName} -> ${path.relative(AGENT_UTILS_ROOT, destPath)} (Will overwrite '${item.key}')`);
+            } else {
+                // New File
+                // 1. Try to infer category from local path (e.g. .agent/personas/engineering/foo.md)
+                const localRelative = path.relative(path.resolve(process.cwd(), '.agent'), item.localPath);
+
+                // Heuristic: Is it a skill or persona?
+                const isSkill = localRelative.includes('skills') || item.localPath.includes('SKILL.md');
+                destDir = isSkill ? SKILLS_DIR : AGENTS_DIR;
+
+                // Remove 'personas' or 'skills' from path if present to get clean category
+                let cleanPath = localRelative.replace(/^(personas|skills)\//, '');
+
+                // If cleanPath has a directory structure, check if that structure exists in central
+                const subDir = path.dirname(cleanPath);
+                if (subDir && subDir !== '.') {
+                    // Check if this subdir exists in central
+                    if (fs.existsSync(path.join(destDir, subDir))) {
+                        destPath = path.join(destDir, cleanPath);
+                    }
+                }
+
+                if (!destPath) {
+                    // Default to parent dir (root of agents-studio or skills-studio)
+                    // Or prompts user? For now, default to root.
+                    destPath = path.join(destDir, path.basename(item.localPath));
+                }
+
+                console.log(`\n[New] ${fileName} -> ${path.relative(AGENT_UTILS_ROOT, destPath)}`);
+            }
+
+            // Interactive Prompt
+            const answer = await askQuestion(`Promote this file? (y/n): `);
+            if (answer.toLowerCase() === 'y') {
+                ensureDir(path.dirname(destPath));
+                fs.copyFileSync(item.localPath, destPath);
+                console.log(`✅ Promoted to ${path.relative(AGENT_UTILS_ROOT, destPath)}`);
+            } else {
+                console.log(`Skipped.`);
+            }
+        }
+
+
+    } else if (command === 'validate') {
+        const results = getValidationStatus();
+        if (results.length === 0) {
+            console.log("No files found to validate.");
+            return;
+        }
+
+        console.log("Validation Results:");
+        results.forEach(r => {
+            if (r.status === 'Synced') {
+                console.log(`✅ [${r.type || 'Synced'}] ${path.basename(r.localPath)}: Synced`);
+            } else if (r.status === 'Modified') {
+                console.log(`⚠️  [${r.type}] ${path.basename(r.localPath)}: Modified locally (differs from ${r.key})`);
+            } else if (r.status === 'Duplicate') {
+                console.log(`🤔 [${r.type}] ${path.basename(r.localPath)}: Potential duplicate of '${r.key}' (Similarity: ${(r.score * 100).toFixed(1)}%)`);
+            } else {
+                console.log(`❓ [New] ${path.basename(r.localPath)}: New local file`);
+            }
+        });
+    } else {
+        console.error("Unknown command. Use 'sync', 'promote', or 'validate'.");
+    }
+}
+
+run();
