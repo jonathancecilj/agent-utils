@@ -10,13 +10,21 @@ This repository serves as the **central source of truth** for all Agent Personas
 
 ## Installation
 
-To use these agents in any project, you need to set up the global `agent-utils` alias. Run this command **once** in your terminal:
+1.  Clone this repository:
+    ```bash
+    git clone https://github.com/jonathancecilj/agent-utils.git
+    cd agent-utils
+    ```
 
-```bash
-source ~/Documents/Development/agent-utils/install.sh
-```
+2.  Run the installation script:
+    ```bash
+    ./install.sh
+    ```
 
-*(Recommended: Add the output alias command to your `~/.zshrc` or `~/.bashrc` to make it permanent.)*
+    This script will:
+    *   Automatically detect the installation directory.
+    *   Prompt you to confirm or change the location.
+    *   Provide the alias command to add to your shell profile (`~/.zshrc` or `~/.bashrc`).
 
 ## Usage
 

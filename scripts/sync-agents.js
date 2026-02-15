@@ -13,7 +13,8 @@ const command = process.argv[2];
 const target = process.argv[3];
 
 if (!command) {
-    console.log("Usage: agent-utils <sync|promote|validate> [file]");
+    console.log("Usage: agent-utils <command> [args]");
+    console.log("Run 'agent-utils help' for more information.");
     process.exit(1);
 }
 
@@ -443,8 +444,42 @@ async function run() {
                 console.log(`❓ [New] ${path.basename(r.localPath)}: New local file`);
             }
         });
+    } else if (command === 'help') {
+        console.log(`
+Agent Utils - AI Agent Management CLI
+=====================================
+
+Commands:
+
+  1. import
+     Interactive setup tool. Scans the central repository for available agents and skills,
+     allows you to select them via a menu, updates your 'agent-manifest.json', and
+     automatically runs the sync process.
+     Usage: agent-utils import
+
+  2. sync
+     Downloads and updates agents/skills defined in your 'agent-manifest.json'.
+     Use this to fetch the latest versions of your configured agents.
+     Usage: agent-utils sync
+
+  3. promote [file]
+     Promotes local changes back to the central repository.
+     - Without arguments: Scans for modified, new, or duplicate files and asks to promote them.
+     - With file argument: Promotes a specific file.
+     Usage: agent-utils promote
+            agent-utils promote path/to/agent.md
+
+  4. validate
+     Checks your local agents against the central repository.
+     Identifies synced, modified, duplicate, or completely new files.
+     Usage: agent-utils validate
+
+  5. help
+     Displays this help message.
+     Usage: agent-utils help
+`);
     } else {
-        console.error("Unknown command. Use 'import', 'sync', 'promote', or 'validate'.");
+        console.error("Unknown command. Run 'agent-utils help' to see available commands.");
     }
 }
 
