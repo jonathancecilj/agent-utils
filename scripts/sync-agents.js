@@ -9,10 +9,11 @@ const AGENT_UTILS_ROOT = path.resolve(__dirname, '..');
 const AGENTS_STUDIO_DIR = path.join(AGENT_UTILS_ROOT, 'agents-studio');
 const PERSONAS_DIR = path.join(AGENTS_STUDIO_DIR, 'personas');
 const WORKFLOWS_DIR = path.join(AGENTS_STUDIO_DIR, 'workflows');
-const SKILLS_DIR = path.join(AGENT_UTILS_ROOT, 'skills-studio');
+const SKILLS_DIR = path.join(AGENTS_STUDIO_DIR, 'skills');
 
 const command = process.argv[2];
 const target = process.argv[3];
+const isForce = process.argv.includes('--force'); // Simple force flag check for future use if needed
 
 if (!command) {
     console.log("Usage: agent-utils <command> [args]");
@@ -284,14 +285,51 @@ async function run() {
             return candidates.length > 0 ? candidates[0] : null;
         }
 
-        uniqueItems.forEach(itemName => {
+        // Cleanup Helper
+        async function checkAndCleanup(fileName, correctType) {
+            const locations = [
+                { type: 'Persona', dir: localPersonasDir },
+                { type: 'Workflow', dir: localWorkflowsDir },
+                { type: 'Skill', dir: localSkillsDir }
+            ];
+
+            // Filter out the correct location
+            const incorrectLocations = locations.filter(l => l.type !== correctType);
+
+            for (const loc of incorrectLocations) {
+                const wrongPath = path.join(loc.dir, fileName);
+
+                // Check if it exists
+                if (fs.existsSync(wrongPath)) {
+                    console.log(`\n⚠️  Found '${fileName}' in incorrect location: ${loc.dir} (Should be in ${correctType}s)`);
+
+                    const ans = await askQuestion(`Do you want to delete this incorrect file? (y/n) > `);
+                    if (ans.toLowerCase() === 'y') {
+                        fs.rmSync(wrongPath, { recursive: true, force: true });
+                        console.log(`✅ Deleted incorrect file.`);
+                    } else {
+                        console.log("Skipped deletion.");
+                    }
+                }
+            }
+        }
+
+        for (const itemName of uniqueItems) {
             const match = findBestMatch(itemName);
 
             if (match) {
                 // Determine destination
                 let destDir = localPersonasDir;
-                if (match.type === 'Workflow') destDir = localWorkflowsDir;
-                if (match.type === 'Skill' || match.type === 'SkillDir') destDir = localSkillsDir;
+                let correctType = 'Persona';
+
+                if (match.type === 'Workflow') {
+                    destDir = localWorkflowsDir;
+                    correctType = 'Workflow';
+                }
+                if (match.type === 'Skill' || match.type === 'SkillDir') {
+                    destDir = localSkillsDir;
+                    correctType = 'Skill';
+                }
 
                 if (match.type === 'SkillDir') {
                     // Sync Directory
@@ -300,18 +338,34 @@ async function run() {
                     ensureDir(path.dirname(destPath));
                     execSync(`rm -rf "${destPath}" && cp -R "${srcPath}" "${destPath}"`);
                     console.log(`Synced ${match.type}: ${match.key} (Source: ${match.srcDir})`);
+
+                    // Cleanup check (for directory)
+                    await checkAndCleanup(match.key, correctType);
+
                 } else {
                     // Sync File
                     const srcPath = path.join(match.srcDir, match.key);
-                    const destPath = path.join(destDir, path.basename(match.key));
+
+                    // Determine destination path:
+                    // For Skills, we MUST preserve folder structure because SKILL.md is generic.
+                    let destPath;
+                    if (match.type === 'Skill') {
+                        destPath = path.join(destDir, match.key);
+                    } else {
+                        destPath = path.join(destDir, path.basename(match.key));
+                    }
+
                     ensureDir(path.dirname(destPath));
                     fs.copyFileSync(srcPath, destPath);
-                    console.log(`Synced ${match.type}: ${path.basename(match.key)} (Matches '${itemName}')`);
+                    console.log(`Synced ${match.type}: ${match.key} (Matches '${itemName}')`);
+
+                    // Cleanup check (for file)
+                    await checkAndCleanup(path.basename(match.key), correctType);
                 }
             } else {
                 console.warn(`Warning: Could not find agent/skill/workflow '${itemName}' in agent-utils.`);
             }
-        });
+        }
 
     } else if (command === 'promote') {
         let candidates = [];
@@ -492,14 +546,17 @@ async function run() {
 
         console.log("Validation Results:");
         results.forEach(r => {
+            // Use relative path for clearer identification (e.g. skills/create-stock-chart/SKILL.md)
+            const displayPath = path.relative(path.resolve(process.cwd(), '.agent'), r.localPath);
+
             if (r.status === 'Synced') {
-                console.log(`✅ [${r.type || 'Synced'}] ${path.basename(r.localPath)}: Synced`);
+                console.log(`✅ [${r.type || 'Synced'}] ${displayPath}: Synced`);
             } else if (r.status === 'Modified') {
-                console.log(`⚠️  [${r.type}] ${path.basename(r.localPath)}: Modified locally (differs from ${r.key})`);
+                console.log(`⚠️  [${r.type}] ${displayPath}: Modified locally (differs from ${r.key})`);
             } else if (r.status === 'Duplicate') {
-                console.log(`🤔 [${r.type}] ${path.basename(r.localPath)}: Potential duplicate of '${r.key}' (Similarity: ${(r.score * 100).toFixed(1)}%)`);
+                console.log(`🤔 [${r.type}] ${displayPath}: Potential duplicate of '${r.key}' (Similarity: ${(r.score * 100).toFixed(1)}%)`);
             } else {
-                console.log(`❓ [New] ${path.basename(r.localPath)}: New local file`);
+                console.log(`❓ [New] ${displayPath}: New local file`);
             }
         });
     } else if (command === 'help') {
