@@ -6,7 +6,9 @@ const { execSync } = require('child_process');
 const readline = require('readline');
 
 const AGENT_UTILS_ROOT = path.resolve(__dirname, '..');
-const AGENTS_DIR = path.join(AGENT_UTILS_ROOT, 'agents-studio');
+const AGENTS_STUDIO_DIR = path.join(AGENT_UTILS_ROOT, 'agents-studio');
+const PERSONAS_DIR = path.join(AGENTS_STUDIO_DIR, 'personas');
+const WORKFLOWS_DIR = path.join(AGENTS_STUDIO_DIR, 'workflows');
 const SKILLS_DIR = path.join(AGENT_UTILS_ROOT, 'skills-studio');
 
 const command = process.argv[2];
@@ -29,8 +31,8 @@ function getFiles(dir) {
     const list = fs.readdirSync(dir);
     list.forEach(file => {
         const filePath = path.join(dir, file);
-        conststat = fs.statSync(filePath);
-        if (conststat && conststat.isDirectory()) {
+        const stat = fs.statSync(filePath);
+        if (stat && stat.isDirectory()) {
             results = results.concat(getFiles(filePath));
         } else {
             if (file.endsWith('.md') && file.toLowerCase() !== 'readme.md') { // Only check markdown files, excluding README.md
@@ -79,11 +81,10 @@ function getValidationStatus() {
 
     if (!fs.existsSync(localAgentDir)) {
         return [];
-        // console.warn("No .agent directory found in current project to validate.");
-        // process.exit(0);
     }
 
-    const centralAgents = loadCentralFiles(AGENTS_DIR);
+    const centralPersonas = loadCentralFiles(PERSONAS_DIR);
+    const centralWorkflows = loadCentralFiles(WORKFLOWS_DIR);
     const centralSkills = loadCentralFiles(SKILLS_DIR);
     const localFiles = getFiles(localAgentDir);
 
@@ -97,10 +98,16 @@ function getValidationStatus() {
         // 1. Find all potential candidates with matching filenames
         let candidates = [];
 
-        // Search Agents
-        for (const [key, content] of Object.entries(centralAgents)) {
+        // Search Personas
+        for (const [key, content] of Object.entries(centralPersonas)) {
             if (path.basename(key) === localFileName) {
-                candidates.push({ key, content, type: 'Agent', dir: AGENTS_DIR });
+                candidates.push({ key, content, type: 'Persona', dir: PERSONAS_DIR });
+            }
+        }
+        // Search Workflows
+        for (const [key, content] of Object.entries(centralWorkflows)) {
+            if (path.basename(key) === localFileName) {
+                candidates.push({ key, content, type: 'Workflow', dir: WORKFLOWS_DIR });
             }
         }
         // Search Skills
@@ -119,7 +126,7 @@ function getValidationStatus() {
             // 3. Shortest Path (Lowest Priority - prefer root)
 
             // Normalize local relative path for comparison (remove .agent/personas prefix etc)
-            let cleanLocalPath = relativePath.replace(/^(\.agent\/)?(personas|skills)\//, '');
+            let cleanLocalPath = relativePath.replace(/^(\.agent\/)?(personas|workflows|skills)\//, '');
 
             // Grade matches
             const scoredCandidates = candidates.map(c => {
@@ -137,7 +144,7 @@ function getValidationStatus() {
                 return { ...c, score, isContentExact };
             });
 
-            // Sort by score desvending
+            // Sort by score descending
             scoredCandidates.sort((a, b) => b.score - a.score);
             bestMatch = scoredCandidates[0];
 
@@ -151,10 +158,15 @@ function getValidationStatus() {
             // 2. Fuzzy Search (No filename match found)
             let fuzzyMatch = { score: 0, key: null, type: null, dir: null };
 
-            // Check against Agents
-            for (const [key, content] of Object.entries(centralAgents)) {
+            // Check against Personas
+            for (const [key, content] of Object.entries(centralPersonas)) {
                 const score = getJaccardSimilarity(localContent, content);
-                if (score > fuzzyMatch.score) fuzzyMatch = { score, key, type: 'Agent', dir: AGENTS_DIR };
+                if (score > fuzzyMatch.score) fuzzyMatch = { score, key, type: 'Persona', dir: PERSONAS_DIR };
+            }
+            // Check against Workflows
+            for (const [key, content] of Object.entries(centralWorkflows)) {
+                const score = getJaccardSimilarity(localContent, content);
+                if (score > fuzzyMatch.score) fuzzyMatch = { score, key, type: 'Workflow', dir: WORKFLOWS_DIR };
             }
             // Check against Skills
             for (const [key, content] of Object.entries(centralSkills)) {
@@ -185,73 +197,131 @@ async function run() {
 
         const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
 
-        // Sync Agents
-        if (manifest.agents) {
-            const localAgentsDir = path.resolve(process.cwd(), '.agent/personas');
-            ensureDir(localAgentsDir);
-            manifest.agents.forEach(agentName => {
-                const fileName = agentName.endsWith('.md') ? agentName : `${agentName}.md`;
+        // Normalize Manifest: Handle legacy 'agents' array effectively as 'personas' for now, but also check if they are workflows
+        // The manifest might just have a list of filenames. We need to check where they exist in the repo.
+        const allItems = [...(manifest.agents || []), ...(manifest.skills || []), ...(manifest.workflows || [])];
+        const uniqueItems = [...new Set(allItems)];
 
-                // Try finding file in agents-studio recursively or structurally
-                // Simple approach: if agentName has slashes, check exact path. 
-                // If not, check if it exists at root, or search for it?
-                // For now, let's assume manifest path matches central repo structure OR is just a filename at root.
+        const localPersonasDir = path.resolve(process.cwd(), '.agent/personas');
+        const localWorkflowsDir = path.resolve(process.cwd(), '.agent/workflows');
+        const localSkillsDir = path.resolve(process.cwd(), '.agent/skills');
 
-                let src = path.join(AGENTS_DIR, fileName);
-                // Check if file exists, if not, maybe it is nested and user only gave name?
-                if (!fs.existsSync(src)) {
-                    // try finding it
-                    const allFiles = loadCentralFiles(AGENTS_DIR);
-                    const match = Object.keys(allFiles).find(k => path.basename(k) === path.basename(fileName));
-                    if (match) src = path.join(AGENTS_DIR, match);
-                }
+        ensureDir(localPersonasDir);
+        ensureDir(localWorkflowsDir);
+        ensureDir(localSkillsDir);
 
+        // Pre-load file maps
+        const availablePersonas = loadCentralFiles(PERSONAS_DIR);
+        const availableWorkflows = loadCentralFiles(WORKFLOWS_DIR);
+        const availableSkills = loadCentralFiles(SKILLS_DIR);
 
-                const dest = path.join(localAgentsDir, path.basename(fileName)); // Flatten to personas dir for local use? Or keep structure?
-                // Flattening is safer for simple consumption unless we want deep structure locally.
+        // Helper to find best match
+        function findBestMatch(itemName) {
+            const searchName = itemName.endsWith('.md') ? itemName : `${itemName}.md`;
+            const baseName = path.basename(searchName);
+            const searchNameLower = searchName.toLowerCase();
+            const baseNameLower = baseName.toLowerCase();
 
-                if (fs.existsSync(src)) {
-                    ensureDir(path.dirname(dest));
-                    fs.copyFileSync(src, dest);
-                    console.log(`Synced Agent: ${fileName}`);
-                } else {
-                    console.warn(`Warning: Agent '${fileName}' not found in agent-utils.`);
-                }
-            });
+            // Collect all candidates
+            const candidates = [];
+
+            const addCandidates = (collection, type, srcDir) => {
+                Object.keys(collection).forEach(key => {
+                    const keyBase = path.basename(key);
+                    const keyLower = key.toLowerCase();
+                    const keyBaseLower = keyBase.toLowerCase();
+
+                    let score = 0;
+
+                    // 1. Exact Key Match (e.g. 'software-engineer/staff-engineer.md')
+                    if (key === searchName) score += 100;
+                    else if (keyLower === searchNameLower) score += 90;
+
+                    // 2. Basename Match (e.g. 'staff-engineer.md')
+                    else if (keyBase === baseName) score += 80;
+                    else if (keyBaseLower === baseNameLower) score += 70;
+
+                    // 3. Jaccard/Fuzzy on filename
+                    else {
+                        const sim = getJaccardSimilarity(baseName, keyBase);
+                        if (sim > 0.5) score += (sim * 50);
+                    }
+
+                    // Bonus: Path overlap?
+                    if (searchName.includes(path.dirname(key))) score += 5;
+
+                    if (score > 0) {
+                        candidates.push({ key, type, srcDir, score });
+                    }
+                });
+            };
+
+            addCandidates(availablePersonas, 'Persona', PERSONAS_DIR);
+            addCandidates(availableWorkflows, 'Workflow', WORKFLOWS_DIR);
+            // Skills (files)
+            addCandidates(availableSkills, 'Skill', SKILLS_DIR);
+
+            // Skills (Directories) - special case
+            // If SKILLS_DIR has directories, we should check those too
+            if (fs.existsSync(SKILLS_DIR)) {
+                const skillDirs = fs.readdirSync(SKILLS_DIR).filter(f => fs.statSync(path.join(SKILLS_DIR, f)).isDirectory());
+                skillDirs.forEach(skillDirName => {
+                    let score = 0;
+                    if (skillDirName === itemName) score += 100;
+                    else if (skillDirName.toLowerCase() === itemName.toLowerCase()) score += 90;
+                    else {
+                        const sim = getJaccardSimilarity(itemName, skillDirName);
+                        if (sim > 0.5) score += (sim * 50);
+                    }
+
+                    if (score > 0) {
+                        candidates.push({ key: skillDirName, type: 'SkillDir', srcDir: SKILLS_DIR, score });
+                    }
+                });
+            }
+
+            candidates.sort((a, b) => b.score - a.score);
+            return candidates.length > 0 ? candidates[0] : null;
         }
 
-        // Sync Skills
-        if (manifest.skills) {
-            const localSkillsDir = path.resolve(process.cwd(), '.agent/skills');
-            ensureDir(localSkillsDir);
-            manifest.skills.forEach(skillName => {
-                const srcPath = path.join(SKILLS_DIR, skillName);
-                const destPath = path.join(localSkillsDir, skillName); // Keep folder name
+        uniqueItems.forEach(itemName => {
+            const match = findBestMatch(itemName);
 
-                if (fs.existsSync(srcPath)) {
-                    ensureDir(path.dirname(destPath)); // Ensure parent dir exists
+            if (match) {
+                // Determine destination
+                let destDir = localPersonasDir;
+                if (match.type === 'Workflow') destDir = localWorkflowsDir;
+                if (match.type === 'Skill' || match.type === 'SkillDir') destDir = localSkillsDir;
+
+                if (match.type === 'SkillDir') {
+                    // Sync Directory
+                    const srcPath = path.join(match.srcDir, match.key);
+                    const destPath = path.join(destDir, match.key);
+                    ensureDir(path.dirname(destPath));
                     execSync(`rm -rf "${destPath}" && cp -R "${srcPath}" "${destPath}"`);
-                    console.log(`Synced Skill: ${skillName}`);
+                    console.log(`Synced ${match.type}: ${match.key} (Source: ${match.srcDir})`);
                 } else {
-                    console.warn(`Warning: Skill '${skillName}' not found in agent-utils.`);
+                    // Sync File
+                    const srcPath = path.join(match.srcDir, match.key);
+                    const destPath = path.join(destDir, path.basename(match.key));
+                    ensureDir(path.dirname(destPath));
+                    fs.copyFileSync(srcPath, destPath);
+                    console.log(`Synced ${match.type}: ${path.basename(match.key)} (Matches '${itemName}')`);
                 }
-            });
-        }
+            } else {
+                console.warn(`Warning: Could not find agent/skill/workflow '${itemName}' in agent-utils.`);
+            }
+        });
 
     } else if (command === 'promote') {
-        // If specific file argument is provided, just promote that one (legacy/specific mode)
-        // OTHERWISE, run smart promote.
-
         let candidates = [];
 
         if (target) {
-            // Single file mode - check what it corresponds to
             const filePath = path.resolve(target);
             if (!fs.existsSync(filePath)) {
                 console.error(`Error: File '${filePath}' not found.`);
                 process.exit(1);
             }
-            // Mock a "New" status for this file to trigger placement logic
             candidates = [{ status: 'New', localPath: filePath }];
         } else {
             console.log("Scanning for changes to promote...");
@@ -269,43 +339,47 @@ async function run() {
         for (const item of candidates) {
             const fileName = path.basename(item.localPath);
             let destPath = null;
-            let destDir = AGENTS_DIR; // Default
+            let destDir = AGENTS_STUDIO_DIR; // Fallback
 
             // Strategic Placement Logic
-            if (item.status === 'Modified') {
+            if (item.status === 'Modified' || item.status === 'Duplicate') {
                 destPath = path.join(item.dir, item.key);
-                console.log(`\n[Modified] ${fileName} -> ${path.relative(AGENT_UTILS_ROOT, destPath)}`);
-            } else if (item.status === 'Duplicate') {
-                destPath = path.join(item.dir, item.key);
-                console.log(`\n[Duplicate] ${fileName} -> ${path.relative(AGENT_UTILS_ROOT, destPath)} (Will overwrite '${item.key}')`);
+                console.log(`\n[${item.status}] ${fileName} -> ${path.relative(AGENT_UTILS_ROOT, destPath)}`);
             } else {
-                // New File
-                // 1. Try to infer category from local path (e.g. .agent/personas/engineering/foo.md)
+                // New File Logic
+                // Infer type from local directory
                 const localRelative = path.relative(path.resolve(process.cwd(), '.agent'), item.localPath);
 
-                // Heuristic: Is it a skill or persona?
-                const isSkill = localRelative.includes('skills') || item.localPath.includes('SKILL.md');
-                destDir = isSkill ? SKILLS_DIR : AGENTS_DIR;
+                // Detection
+                let detectedType = 'Unknown';
+                let targetBaseDir = null;
 
-                // Remove 'personas' or 'skills' from path if present to get clean category
-                let cleanPath = localRelative.replace(/^(personas|skills)\//, '');
-
-                // If cleanPath has a directory structure, check if that structure exists in central
-                const subDir = path.dirname(cleanPath);
-                if (subDir && subDir !== '.') {
-                    // Check if this subdir exists in central
-                    if (fs.existsSync(path.join(destDir, subDir))) {
-                        destPath = path.join(destDir, cleanPath);
-                    }
+                if (localRelative.includes('personas')) {
+                    detectedType = 'Persona';
+                    targetBaseDir = PERSONAS_DIR;
+                } else if (localRelative.includes('workflows')) {
+                    detectedType = 'Workflow';
+                    targetBaseDir = WORKFLOWS_DIR;
+                } else if (localRelative.includes('skills')) {
+                    detectedType = 'Skill';
+                    targetBaseDir = SKILLS_DIR;
                 }
 
-                if (!destPath) {
-                    // Default to parent dir (root of agents-studio or skills-studio)
-                    // Or prompts user? For now, default to root.
-                    destPath = path.join(destDir, path.basename(item.localPath));
+                if (!targetBaseDir) {
+                    // Fallback: Ask user or default to Personas? 
+                    console.log(`\nCould not automatically determine type for '${fileName}'. Defaulting to Persona.`);
+                    detectedType = 'Persona';
+                    targetBaseDir = PERSONAS_DIR;
                 }
 
-                console.log(`\n[New] ${fileName} -> ${path.relative(AGENT_UTILS_ROOT, destPath)}`);
+                // Clean matching prefix
+                let cleanPath = localRelative.replace(/^(personas|workflows|skills)\//, '');
+
+                // If the path had subdirectories locally, try to preserve them?
+                // Or check if those subdirectories exist in target to verify category.
+
+                destPath = path.join(targetBaseDir, cleanPath);
+                console.log(`\n[New] ${fileName} -> ${path.relative(AGENT_UTILS_ROOT, destPath)} (Type: ${detectedType})`);
             }
 
             // Interactive Prompt
@@ -323,20 +397,24 @@ async function run() {
     } else if (command === 'import') {
         console.log("Fetching available agents and skills...");
 
-        const centralAgents = loadCentralFiles(AGENTS_DIR);
-        const centralSkills = loadCentralFiles(SKILLS_DIR);
+        const availablePersonas = Object.keys(loadCentralFiles(PERSONAS_DIR)).map(p => path.basename(p));
+        const availableWorkflows = Object.keys(loadCentralFiles(WORKFLOWS_DIR)).map(w => path.basename(w));
 
-        const availableAgents = Object.keys(centralAgents).sort();
-        const availableSkills = Object.keys(centralSkills).sort();
+        // For skills, we list directories in skills-studio
+        let availableSkills = [];
+        if (fs.existsSync(SKILLS_DIR)) {
+            availableSkills = fs.readdirSync(SKILLS_DIR).filter(f => fs.statSync(path.join(SKILLS_DIR, f)).isDirectory());
+        }
 
         // Load existing manifest
         const manifestPath = path.resolve(process.cwd(), 'agent-manifest.json');
-        let manifest = { agents: [], skills: [] };
+        let manifest = { agents: [], skills: [], workflows: [] };
         if (fs.existsSync(manifestPath)) {
             try {
                 manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
                 manifest.agents = manifest.agents || [];
                 manifest.skills = manifest.skills || [];
+                manifest.workflows = manifest.workflows || [];
             } catch (e) {
                 console.warn("Could not parse existing agent-manifest.json, starting fresh.");
             }
@@ -345,69 +423,53 @@ async function run() {
         // Helper to display list and toggle selections
         function printSelection(title, items, selected) {
             console.log(`\n--- ${title} ---`);
-            items.forEach((item, index) => {
+            const sortedItems = [...new Set(items)].sort();
+            sortedItems.forEach((item, index) => {
                 const isSelected = selected.includes(item);
                 const mark = isSelected ? '[x]' : '[ ]';
                 console.log(`${index + 1}. ${mark} ${item}`);
             });
+            return sortedItems;
         }
 
-        // Interact with User
-        // Agents
-        let doneAgents = false;
-        while (!doneAgents) {
-            printSelection("Available Agents", availableAgents, manifest.agents);
-            console.log("\nEnter numbers to toggle selection (space separated), 'a' for all, 'n' for none, or 'd' when done.");
-            const ans = await askQuestion("Select Agents > ");
+        async function handleSelection(title, items, currentSelection) {
+            let done = false;
+            while (!done) {
+                const sortedItems = printSelection(title, items, currentSelection);
+                console.log("\nEnter numbers to toggle selection, 'a' for all, 'n' for none, or 'd' when done.");
+                const ans = await askQuestion(`${title} > `);
 
-            if (ans.toLowerCase() === 'd') {
-                doneAgents = true;
-            } else if (ans.toLowerCase() === 'a') {
-                manifest.agents = [...availableAgents];
-            } else if (ans.toLowerCase() === 'n') {
-                manifest.agents = [];
-            } else {
-                const indices = ans.split(/\s+/).map(s => parseInt(s, 10)).filter(n => !isNaN(n));
-                indices.forEach(i => {
-                    if (i > 0 && i <= availableAgents.length) {
-                        const item = availableAgents[i - 1];
-                        if (manifest.agents.includes(item)) {
-                            manifest.agents = manifest.agents.filter(x => x !== item);
-                        } else {
-                            manifest.agents.push(item);
+                if (ans.toLowerCase() === 'd') {
+                    done = true;
+                } else if (ans.toLowerCase() === 'a') {
+                    // Add all not already present
+                    sortedItems.forEach(item => {
+                        if (!currentSelection.includes(item)) currentSelection.push(item);
+                    });
+                } else if (ans.toLowerCase() === 'n') {
+                    // Clear all
+                    currentSelection.length = 0;
+                } else {
+                    const indices = ans.split(/\s+/).map(s => parseInt(s, 10)).filter(n => !isNaN(n));
+                    indices.forEach(i => {
+                        if (i > 0 && i <= sortedItems.length) {
+                            const item = sortedItems[i - 1];
+                            const idx = currentSelection.indexOf(item);
+                            if (idx > -1) {
+                                currentSelection.splice(idx, 1);
+                            } else {
+                                currentSelection.push(item);
+                            }
                         }
-                    }
-                });
+                    });
+                }
             }
         }
 
-        // Skills
-        let doneSkills = false;
-        while (!doneSkills) {
-            printSelection("Available Skills", availableSkills, manifest.skills);
-            console.log("\nEnter numbers to toggle selection (space separated), 'a' for all, 'n' for none, or 'd' when done.");
-            const ans = await askQuestion("Select Skills > ");
-
-            if (ans.toLowerCase() === 'd') {
-                doneSkills = true;
-            } else if (ans.toLowerCase() === 'a') {
-                manifest.skills = [...availableSkills];
-            } else if (ans.toLowerCase() === 'n') {
-                manifest.skills = [];
-            } else {
-                const indices = ans.split(/\s+/).map(s => parseInt(s, 10)).filter(n => !isNaN(n));
-                indices.forEach(i => {
-                    if (i > 0 && i <= availableSkills.length) {
-                        const item = availableSkills[i - 1];
-                        if (manifest.skills.includes(item)) {
-                            manifest.skills = manifest.skills.filter(x => x !== item);
-                        } else {
-                            manifest.skills.push(item);
-                        }
-                    }
-                });
-            }
-        }
+        // Interact
+        await handleSelection("Available Personas (Agents)", availablePersonas, manifest.agents);
+        await handleSelection("Available Workflows", availableWorkflows, manifest.workflows);
+        await handleSelection("Available Skills", availableSkills, manifest.skills);
 
         // Save Manifest
         fs.writeFileSync(manifestPath, JSON.stringify(manifest, null, 2));
@@ -415,10 +477,6 @@ async function run() {
 
         // Run Sync
         console.log("Running sync...");
-        // Re-run the script with 'sync' command
-        // We can't easily recurse run() cleanly because of how it's structured, 
-        // but we can spawn a child process or just copy the sync logic. 
-        // For simplicity and to avoid code duplication, I'll execute the script itself.
         try {
             execSync(`node "${__filename}" sync`, { stdio: 'inherit' });
         } catch (e) {
@@ -452,31 +510,24 @@ Agent Utils - AI Agent Management CLI
 Commands:
 
   1. import
-     Interactive setup tool. Scans the central repository for available agents and skills,
-     allows you to select them via a menu, updates your 'agent-manifest.json', and
-     automatically runs the sync process.
-     Usage: agent-utils import
+     Interactive setup tool. Scans the central repository for available Personas, Workflows, and Skills.
+     Updates 'agent-manifest.json' and runs sync.
 
   2. sync
-     Downloads and updates agents/skills defined in your 'agent-manifest.json'.
-     Use this to fetch the latest versions of your configured agents.
-     Usage: agent-utils sync
+     Downloads and updates items defined in 'agent-manifest.json'.
+     - Personas -> .agent/personas/
+     - Workflows -> .agent/workflows/
+     - Skills -> .agent/skills/
 
   3. promote [file]
      Promotes local changes back to the central repository.
-     - Without arguments: Scans for modified, new, or duplicate files and asks to promote them.
-     - With file argument: Promotes a specific file.
-     Usage: agent-utils promote
-            agent-utils promote path/to/agent.md
+     - Scans source directory (.agent/personas, etc) to determine destination.
 
   4. validate
      Checks your local agents against the central repository.
-     Identifies synced, modified, duplicate, or completely new files.
-     Usage: agent-utils validate
 
   5. help
      Displays this help message.
-     Usage: agent-utils help
 `);
     } else {
         console.error("Unknown command. Run 'agent-utils help' to see available commands.");
