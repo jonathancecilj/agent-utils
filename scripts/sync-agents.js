@@ -10,6 +10,7 @@ const AGENTS_STUDIO_DIR = path.join(AGENT_UTILS_ROOT, 'agents-studio');
 const PERSONAS_DIR = path.join(AGENTS_STUDIO_DIR, 'personas');
 const WORKFLOWS_DIR = path.join(AGENTS_STUDIO_DIR, 'workflows');
 const SKILLS_DIR = path.join(AGENTS_STUDIO_DIR, 'skills');
+const CONFIG_DIR = path.join(AGENTS_STUDIO_DIR, 'config');
 
 const command = process.argv[2];
 const target = process.argv[3];
@@ -87,6 +88,7 @@ function getValidationStatus() {
     const centralPersonas = loadCentralFiles(PERSONAS_DIR);
     const centralWorkflows = loadCentralFiles(WORKFLOWS_DIR);
     const centralSkills = loadCentralFiles(SKILLS_DIR);
+    const centralConfig = loadCentralFiles(CONFIG_DIR);
     const localFiles = getFiles(localAgentDir);
 
     const results = [];
@@ -115,6 +117,12 @@ function getValidationStatus() {
         for (const [key, content] of Object.entries(centralSkills)) {
             if (path.basename(key) === localFileName) {
                 candidates.push({ key, content, type: 'Skill', dir: SKILLS_DIR });
+            }
+        }
+        // Search Config
+        for (const [key, content] of Object.entries(centralConfig)) {
+            if (path.basename(key) === localFileName) {
+                candidates.push({ key, content, type: 'Config', dir: CONFIG_DIR });
             }
         }
 
@@ -187,6 +195,11 @@ function getValidationStatus() {
                 const score = getJaccardSimilarity(localContent, content);
                 if (score > fuzzyMatch.score) fuzzyMatch = { score, key, type: 'Skill', dir: SKILLS_DIR };
             }
+            // Check against Config
+            for (const [key, content] of Object.entries(centralConfig)) {
+                const score = getJaccardSimilarity(localContent, content);
+                if (score > fuzzyMatch.score) fuzzyMatch = { score, key, type: 'Config', dir: CONFIG_DIR };
+            }
 
             if (fuzzyMatch.score > 0.8) {
                 results.push({ status: 'Duplicate', localPath: localFilePath, ...fuzzyMatch });
@@ -211,23 +224,25 @@ async function run() {
 
         const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
 
-        // Normalize Manifest: Handle legacy 'agents' array effectively as 'personas' for now, but also check if they are workflows
-        // The manifest might just have a list of filenames. We need to check where they exist in the repo.
-        const allItems = [...(manifest.agents || []), ...(manifest.skills || []), ...(manifest.workflows || [])];
+        // Normalize Manifest
+        const allItems = [...(manifest.agents || []), ...(manifest.skills || []), ...(manifest.workflows || []), ...(manifest.config || [])];
         const uniqueItems = [...new Set(allItems)];
 
         const localPersonasDir = path.resolve(process.cwd(), '.agent/personas');
         const localWorkflowsDir = path.resolve(process.cwd(), '.agent/workflows');
         const localSkillsDir = path.resolve(process.cwd(), '.agent/skills');
+        const localConfigDir = path.resolve(process.cwd(), '.agent/config');
 
         ensureDir(localPersonasDir);
         ensureDir(localWorkflowsDir);
         ensureDir(localSkillsDir);
+        ensureDir(localConfigDir);
 
         // Pre-load file maps
         const availablePersonas = loadCentralFiles(PERSONAS_DIR);
         const availableWorkflows = loadCentralFiles(WORKFLOWS_DIR);
         const availableSkills = loadCentralFiles(SKILLS_DIR);
+        const availableConfig = loadCentralFiles(CONFIG_DIR);
 
         // Helper to find best match
         function findBestMatch(itemName) {
@@ -274,6 +289,7 @@ async function run() {
             addCandidates(availableWorkflows, 'Workflow', WORKFLOWS_DIR);
             // Skills (files)
             addCandidates(availableSkills, 'Skill', SKILLS_DIR);
+            addCandidates(availableConfig, 'Config', CONFIG_DIR);
 
             // Skills (Directories) - special case
             // If SKILLS_DIR has directories, we should check those too
@@ -303,7 +319,8 @@ async function run() {
             const locations = [
                 { type: 'Persona', dir: localPersonasDir },
                 { type: 'Workflow', dir: localWorkflowsDir },
-                { type: 'Skill', dir: localSkillsDir }
+                { type: 'Skill', dir: localSkillsDir },
+                { type: 'Config', dir: localConfigDir }
             ];
 
             // Filter out the correct location
@@ -342,6 +359,10 @@ async function run() {
                 if (match.type === 'Skill' || match.type === 'SkillDir') {
                     destDir = localSkillsDir;
                     correctType = 'Skill';
+                }
+                if (match.type === 'Config') {
+                    destDir = localConfigDir;
+                    correctType = 'Config';
                 }
 
                 if (match.type === 'SkillDir') {
@@ -430,6 +451,9 @@ async function run() {
                 } else if (localRelative.includes('skills')) {
                     detectedType = 'Skill';
                     targetBaseDir = SKILLS_DIR;
+                } else if (localRelative.includes('config')) {
+                    detectedType = 'Config';
+                    targetBaseDir = CONFIG_DIR;
                 }
 
                 if (!targetBaseDir) {
@@ -440,7 +464,7 @@ async function run() {
                 }
 
                 // Clean matching prefix
-                let cleanPath = localRelative.replace(/^(personas|workflows|skills)\//, '');
+                let cleanPath = localRelative.replace(/^(personas|workflows|skills|config)\//, '');
 
                 // If the path had subdirectories locally, try to preserve them?
                 // Or check if those subdirectories exist in target to verify category.
@@ -466,6 +490,7 @@ async function run() {
 
         const availablePersonas = Object.keys(loadCentralFiles(PERSONAS_DIR)).map(p => path.basename(p));
         const availableWorkflows = Object.keys(loadCentralFiles(WORKFLOWS_DIR)).map(w => path.basename(w));
+        const availableConfig = Object.keys(loadCentralFiles(CONFIG_DIR)).map(c => path.basename(c));
 
         // For skills, we list directories in skills-studio
         let availableSkills = [];
@@ -475,13 +500,14 @@ async function run() {
 
         // Load existing manifest
         const manifestPath = path.resolve(process.cwd(), 'agent-manifest.json');
-        let manifest = { agents: [], skills: [], workflows: [] };
+        let manifest = { agents: [], skills: [], workflows: [], config: [] };
         if (fs.existsSync(manifestPath)) {
             try {
                 manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
                 manifest.agents = manifest.agents || [];
                 manifest.skills = manifest.skills || [];
                 manifest.workflows = manifest.workflows || [];
+                manifest.config = manifest.config || [];
             } catch (e) {
                 console.warn("Could not parse existing agent-manifest.json, starting fresh.");
             }
@@ -537,6 +563,7 @@ async function run() {
         await handleSelection("Available Personas (Agents)", availablePersonas, manifest.agents);
         await handleSelection("Available Workflows", availableWorkflows, manifest.workflows);
         await handleSelection("Available Skills", availableSkills, manifest.skills);
+        await handleSelection("Available Configs", availableConfig, manifest.config);
 
         // Save Manifest
         fs.writeFileSync(manifestPath, JSON.stringify(manifest, null, 2));
@@ -588,6 +615,7 @@ Commands:
      - Personas -> .agent/personas/
      - Workflows -> .agent/workflows/
      - Skills -> .agent/skills/
+     - Config -> .agent/config/
 
   3. promote [file]
      Promotes local changes back to the central repository.
