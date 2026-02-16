@@ -138,6 +138,13 @@ function getValidationStatus() {
                 // Path match?
                 if (c.key === cleanLocalPath) score += 50;
 
+                // Generic Filename Protection (SKILL.md, README.md, index.js)
+                // If filename is generic and paths DON'T match, severe penalty to avoid false positives.
+                const isGeneric = ['skill.md', 'readme.md', 'index.js', 'index.ts', 'main.py'].includes(path.basename(localFileName).toLowerCase());
+                if (isGeneric && c.key !== cleanLocalPath) {
+                    score -= 1000;
+                }
+
                 // Penalize depth (prefer root files slightly if ambiguous)
                 const depth = c.key.split(path.sep).length;
                 score -= depth;
@@ -149,14 +156,20 @@ function getValidationStatus() {
             scoredCandidates.sort((a, b) => b.score - a.score);
             bestMatch = scoredCandidates[0];
 
+            // Validate match quality
+            if (bestMatch.score <= 0) {
+                bestMatch = null;
+            }
+        }
+
+        if (bestMatch) {
             if (bestMatch.isContentExact) {
                 results.push({ status: 'Synced', localPath: localFilePath, ...bestMatch });
             } else {
                 results.push({ status: 'Modified', localPath: localFilePath, ...bestMatch });
             }
-
         } else {
-            // 2. Fuzzy Search (No filename match found)
+            // 2. Fuzzy Search (No filename match found OR match rejected)
             let fuzzyMatch = { score: 0, key: null, type: null, dir: null };
 
             // Check against Personas
