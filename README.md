@@ -1,103 +1,111 @@
-# Agent Utils
+<p align="center">
+  <img src="assets/logo.png" width="200" alt="Agent Utils Logo">
+</p>
 
-This repository serves as the **central source of truth** for all Agent Personas and Skills used across your personal and professional projects.
+<h1 align="center">Agent Utils</h1>
 
-## Directory Structure
+<p align="center">
+  <a href="#-active-registry"><b>Registry</b></a> •
+  <a href="#-directory-structure"><b>Architecture</b></a> •
+  <a href="#-installation"><b>Setup</b></a> •
+  <a href="#-usage"><b>Usage</b></a>
+</p>
 
-*   **`agents-studio/`**: Contains core Agent Personas (e.g., `technical-writer.md`, `seo-specialist.md`).
-*   **`skills-studio/`**: Contains reusable Skills (e.g., `web-scraping/SKILL.md`).
-*   **`scripts/`**: Maintenance tools (including the synchronization script and `install.sh`).
+<p align="center">
+  <img src="https://img.shields.io/badge/Status-Central_Source_of_Truth-blueviolet?style=for-the-badge" alt="Status">
+  <img src="https://img.shields.io/badge/Personas-11_Active-brightgreen?style=for-the-badge" alt="Personas">
+  <img src="https://img.shields.io/badge/Skills-2_Active-blue?style=for-the-badge" alt="Skills">
+  <img src="https://img.shields.io/badge/Workflows-18_Active-orange?style=for-the-badge" alt="Workflows">
+</p>
 
-## Installation
+---
 
-1.  Clone this repository:
-    ```bash
-    git clone https://github.com/jonathancecilj/agent-utils.git
-    cd agent-utils
-    ```
+### 🚀 The Command Center
 
-2.  Run the installation script:
-    ```bash
-    ./install.sh
-    ```
+This repository is the **central intelligence hub** for all Agent Personas and Skills. It provides a standardized framework for deploying AI agents across multiple projects with a single command.
 
-    This script will:
-    *   Automatically detect the installation directory.
-    *   Prompt you to confirm or change the location.
-    *   Provide the alias command to add to your shell profile (`~/.zshrc` or `~/.bashrc`).
+## 📋 Active Registry
 
-## Usage
+Everything in this section is fully configured and ready for production use.
 
-### 1. Syncing Agents to a Project (Downstream)
+| Category | Component | Description |
+| :--- | :--- | :--- |
+| **🤖 Agents** | `staff-engineer.md` | High-level technical strategy and system design. |
+| | `security-reviewer.md` | Deep security audit and vulnerability scanning. |
+| | `portfolio-manager.md` | specialized Yahoo Finance portfolio tracking. |
+| | `human-editor.md` | Refining AI content for human readability. |
+| | `resume-expert.md` | Career guidance and resume optimization. |
+| | `data-viz-expert.md` | Turning raw data into stunning visualizations. |
+| **🛠️ Skills** | `yahoo-finance-browser` | Full browser automation for stock data. |
+| | `create-stock-chart` | Dynamic chart generation for financial analysis. |
+| **📝 Workflows**| `publish-article` | Automated flow from draft to production. |
+| | `sync-to-portfolio` | Real-time synchronization of financial entries. |
+| | `commit-msg-gen` | AI-powered semantic git commit generation. |
 
-To use specific agents in a project (e.g., `Medium` or `Portfolio`):
+<details>
+<summary><b>🔍 View QA & Testing Suite (5 Active Agents)</b></summary>
 
-### 1. Import Agents (Interactive)
+*   `api-tester.md`
+*   `performance-benchmarker.md`
+*   `test-results-analyzer.md`
+*   `tool-evaluator.md`
+*   `workflow-optimizer.md`
+</details>
 
-The easiest way to get started is to use the interactive `import` command. This will help you select agents and automatically create your `agent-manifest.json` file.
+<details>
+<summary><b>🌑 View Inactive/Draft Personas (22 Placeholders)</b></summary>
 
+These personas are currently in "Pending Configuration" mode:
+*   `ui-designer.md`, `growth-hacker.md`, `tiktok-strategist.md`, `infrastructure-maintainer.md`, and 18 others.
+</details>
+
+---
+
+## 🏗️ Architecture
+
+```mermaid
+graph TD
+    A[Agent Utils Central] -->|agent-utils sync| B[Target Project]
+    B --> C[.agent/personas]
+    B --> D[.agent/skills]
+    C --> E[Customized Agent Identity]
+    D --> F[Tool Capabilities]
+```
+
+*   **`agents-studio/personas/`**: Core identity definitions.
+*   **`agents-studio/skills/`**: Capability modules (JS/Browser automation).
+*   **`agents-studio/workflows/`**: Multi-step SOPs for agents.
+*   **`scripts/`**: Sync and maintenance engine.
+
+---
+
+## ⚙️ Setup & Deployment
+
+### 1. Global Installation
+```bash
+git clone https://github.com/jonathancecilj/agent-utils.git
+cd agent-utils
+./install.sh
+```
+
+### 2. Project Integration (Downstream)
+The `import` command helps you select agents and automatically builds your `agent-manifest.json`.
 ```bash
 agent-utils import
 ```
 
-Follow the prompts to select the agents and skills you want to add to your project.
-
-### 2. Manual Setup (Optional)
-
-If you prefer to configure manually:
-
-1.  Create an `agent-manifest.json` file in the root of your project:
-    ```json
-    {
-      "agents": [
-        "engineering/ai-engineer",
-        "writing/technical-writer"
-      ],
-      "skills": [
-         "web-scraping"
-      ]
-    }
-    ```
-
-2.  Run the sync command:
-    ```bash
-    agent-utils sync
-    ```
-
-    This will copy the requested agents into your project's `.agent/personas/` and `.agent/skills/` directories.
-
-### 2. Validating Changes (Pre-Check)
-
-Before promoting, you can check which agents have changed locally compared to the central repository:
-
+### 3. Sync & Update
+Pull the latest definitions from the central hub into your current project:
 ```bash
-agent-utils validate
+agent-utils sync
 ```
 
-This will scan your `.agent/` directory and report the status of each file:
-- **[Synced]**: File matches the central repo exactly.
-- **[Modified]**: File has local changes.
-- **[New]**: File exists locally but not in the central repo.
-- **[Duplicate]**: File content matches an existing agent, even if named differently (renamed).
+---
 
-### 3. Promoting New Agents (Upstream)
+## 🛠️ Contribution Workflow
 
-If you create or improve an agent within a project and want to save it back to this central repository:
+1.  **Draft Local**: Create a new agent in your project's `.agent/personas/`.
+2.  **Validate**: Run `agent-utils validate` to check for drift.
+3.  **Promote Upstream**: Run `agent-utils promote` to push your improvements back to this central registry.
 
-1.  Draft and test the agent locally in your project (e.g., `.agent/personas/engineering/new-agent.md`).
-2.  Run the promote command:
-    ```bash
-    agent-utils promote
-    ```
-
-    This command is **interactive** and **smart**:
-    - It runs `validate` first to find all changes.
-    - It prompts you `(y/n)` for each file before promoting.
-    - **Smart Placement**: It automatically mirrors your local folder structure.
-      - Local: `.agent/personas/engineering/new-agent.md`
-      - Central: `agents-studio/engineering/new-agent.md`
-
-## Contribution Rules
-
-*   **Always Checked First**: Before creating a new agent, check this repo (via `agent-utils sync` or browsing) specific to your needs.
-*   **Draft Local, Promote Global**: Always test new agents in a specific project context before promoting them here.
+<p align="right">(<a href="#-agent-utils">back to top</a>)</p>
